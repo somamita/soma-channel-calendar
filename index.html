@@ -72,6 +72,11 @@ button.monthNav { margin: 2px; padding: 5px 10px; }
 <body>
 
 <h1>Soma Channel Calendar</h1>
+<p style="font-size: 0.9em; color: #555; margin-top: 5px;">
+  サムネイルをクリックで、Youtubeサイトへ移動します。<br>
+  黄色の日付の場合、過去のその日に投稿された動画が存在します。
+</p>
+
 <div class="container">
   <div>
     <div id="monthNav"></div>
@@ -90,6 +95,7 @@ button.monthNav { margin: 2px; padding: 5px 10px; }
 </div>
 
 <script>
+// --- ここから下は元のスクリプトをそのまま ---
 const API_KEY = 'AIzaSyDU8UH7nElrdByWbH6nnqRHSM-WFLCvhOw';
 const channelId = 'UCpJnqI7tiz-Tr-UNDmfSmAQ';
 let uploadsPlaylistId = '';
@@ -198,9 +204,7 @@ function displayMonth(){
       const shortVideos = videoList.filter(v => v.type==='short');
 
       html += `<div class="calendar-video-container">`;
-      // 横動画→上
       normalVideos.forEach(v=>{ html += `<div class="video" onclick="event.stopPropagation(); window.open('${v.url}','_blank')"><img src="${v.thumbnail}"><span>${v.title}</span></div>`; });
-      // ショート動画→下
       shortVideos.forEach(v=>{ html += `<div class="video" onclick="event.stopPropagation(); window.open('${v.url}','_blank')"><img src="${v.thumbnail}"><span>${v.title}</span></div>`; });
       html += `</div>`;
     } else {
