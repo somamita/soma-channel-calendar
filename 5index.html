@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Soma Channel Calendar</title>
+<style>
+body { font-family: sans-serif; padding: 20px; }
+.container { display: flex; gap: 20px; align-items: flex-start; }
+#calendar { flex: 3; min-width: 300px; }
+.rightColumn { flex: 1; min-width: 250px; display: flex; flex-direction: column; gap: 20px; }
+#selectedDay, #anniversary { background: #fafafa; padding: 10px; border-radius: 8px; max-height: 45vh; overflow-y: auto; }
+#selectedVideos, #anniversaryVideos { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+#selectedVideos .video, #anniversaryVideos .video { display: flex; flex-direction: column; align-items: center; }
+table { border-collapse: collapse; margin-top: 20px; width:100%; table-layout: fixed; }
+th { height: 30px; font-weight: normal; }
+th:nth-child(1) { color: red; font-weight: bold; }
+th:nth-child(7) { color: blue; font-weight: bold; }
+td { border: 1px solid #ccc; width: 14.28%; height: 150px; vertical-align: top; padding: 2px; text-align: center; cursor: pointer; box-sizing: border-box; }
+.calendar-video-container { display: flex; flex-direction: column; max-height: 120px; overflow-y: auto; width: 100%; }
+.calendar-video-container .video { display: flex; flex-direction: column; align-items: center; }
+.calendar-video-container .video img { width: 100%; height: auto; max-height: 50px; object-fit: cover; border-radius: 6px; }
+.video span { font-size: 12px; text-align: center; }
+td.highlight { border: 2px solid #ff8c00; }
+#monthNav { margin-top:10px; }
+button.monthNav { margin: 2px; padding: 5px 10px; }
+</style>
+</head>
+<body>
+<h1>Soma Channel Calendar</h1>
+<p style="font-size: 0.9em; color: #555; margin-top: 5px;">
+サムネイルをクリックで、Youtubeサイトへ移動します。<br>
+黄色の日付の場合、過去のその日に投稿された動画が存在します。
+</p>
+
+<div class="container">
+  <div>
+    <div id="monthNav"></div>
+    <div id="calendar"></div>
+  </div>
+  <div class="rightColumn">
+    <div id="selectedDay">
+      <h3>選択した日の動画（過去含む）</h3>
+      <div id="selectedVideos"></div>
+    </div>
+    <div id="anniversary">
+      <h3>過去の今日の動画</h3>
+      <div id="anniversaryVideos"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_KEY = 'AIzaSyDU8UH7nElrdByWbH6nnqRHSM-WFLCvhOw';
+const channelId = 'UCpJnqI7tiz-Tr-UNDmfSmAQ';
+let uploadsPlaylistId = '';
+let videos = [];
+let monthsKeys = [];
+let currentMonthIndex = 0;
+
+const calendarDiv = document.getElementById('calendar');
+const monthNavDiv = document.getElementById('monthNav');
+
+async function fetchUploadsPlaylistId() {
+  const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${channelId}&key=${API_KEY}`);
+  const data = await res.json();
+  uploadsPlaylistId = data.items[0].contentDetails.relatedPlaylists.uploads;
+}
+
+async function fetchAllVideos() {
+  let nextPageToken = '';
+  try {
+    do {
+      const res = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?key=${API_KEY}&playlistId=${uploadsPlaylistId}&part=snippet,contentDetails&maxResults=50&pageToken=${nextPageToken}`);
+      const data = await res.json();
+      data.items.forEach(item => {
+        const v = item.snippet;
+        const publishedAt = v.publishedAt || item.contentDetails.videoPublishedAt;
+        videos.push({
+          title: v.title,
+          date: publishedAt,
+          url: 'https://www.youtube.com/watch?v=' + v.resourceId.videoId,
+          thumbnail: v.thumbnails.medium.url,
+          type: null
+        });
+      });
+      nextPageToken = data.nextPageToken || '';
+    } while(nextPageToken);
+
+    // 動画タイプ判定
+    const chunks = [];
+    for (let i = 0; i < videos.length; i += 50) chunks.push(videos.slice(i, i+50).map(v => v.url.split('v=')[1]));
+    for (const chunk of chunks) {
+      const res2 = await fetch(`https://www.googleapis.com/youtube/v3/videos?key=${API_KEY}&id=${chunk.join(',')}&part=contentDetails`);
+      const data2 = await res2.json();
+      data2.items.forEach(v=>{
+        const seconds = parseDuration(v.contentDetails.duration);
+        const vid = videos.find(vid => vid.url.endsWith(v.id));
+        if(vid) vid.type = seconds <= 60 ? 'short' : 'normal';
+      });
+    }
+  } catch(e) {
+    console.error(e);
+    calendarDiv.innerHTML = '取得に失敗しました<br>APIキーやチャンネルIDを確認してください。';
+  }
+}
+
+function parseDuration(duration) {
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  const hours = match[1]?parseInt(match[1]):0;
+  const minutes = match[2]?parseInt(match[2]):0;
+  const seconds = match[3]?parseInt(match[3]):0;
+  return hours*3600 + minutes*60 + seconds;
+}
+
+function setupMonths() {
+  const start = new Date(2019,0,1);
+  const end = new Date();
+  const months = [];
+  let d = new Date(start.getFullYear(), start.getMonth(), 1);
+  while(d <= end){
+    months.push(`${d.getFullYear()}-${d.getMonth()+1}`);
+    d.setMonth(d.getMonth()+1);
+  }
+  monthsKeys = months;
+  const now = new Date();
+  const thisMonthKey = `${now.getFullYear()}-${now.getMonth()+1}`;
+  currentMonthIndex = monthsKeys.indexOf(thisMonthKey);
+}
+
+function displayMonth() {
+  const monthKey = monthsKeys[currentMonthIndex];
+  const [year, month] = monthKey.split('-').map(Number);
+  const firstDay = new Date(year, month-1, 1);
+  const lastDay = new Date(year, month, 0);
+
+  const videosThisMonth = videos.filter(v => {
+    const d = new Date(v.date);
+    return d.getFullYear() === year && d.getMonth() === (month-1);
+  });
+
+  const todayDate = new Date();
+  let html = `<h2 class="header">${year}年 ${month}月</h2><table><tr>`;
+  const daysOfWeek=['日','月','火','水','木','金','土'];
+  for(const d of daysOfWeek) html+=`<th>${d}</th>`;
+  html+='</tr><tr>';
+
+  for(let i=0;i<firstDay.getDay();i++) html+='<td></td>';
+
+  for(let day=1; day<=lastDay.getDate(); day++){
+    const videoList = videosThisMonth.filter(v => {
+      const d = new Date(v.date);
+      return d.getDate() === day;
+    });
+    const hasAnniversary = videos.some(v => {
+      const d = new Date(v.date);
+      return d.getMonth() === month-1 && d.getDate() === day;
+    });
+    const isToday = (year===todayDate.getFullYear() && month===todayDate.getMonth()+1 && day===todayDate.getDate());
+    let dayHtml = hasAnniversary ? `<span style="color:yellow;font-weight:bold">${day}</span>` : day;
+    html += `<td onclick="highlightAnniversary(${year},${month},${day})" style="vertical-align: top; ${isToday ? 'background-color:#d0f0ff;' : ''}">`;
+
+    if(videoList.length){
+      html += `<strong>${dayHtml}</strong><br>`;
+      html += `<div class="calendar-video-container">`;
+      // typeに関係なく表示
+      videoList.forEach(v=>{
+        html += `<div class="video" onclick="event.stopPropagation(); window.open('${v.url}','_blank')">
+          <img src="${v.thumbnail}"><span>${v.title}</span>
+        </div>`;
+      });
+      html += `</div>`;
+    } else {
+      html += dayHtml;
+    }
+    html += `</td>`;
+    if((firstDay.getDay()+day) % 7 === 0) html += '</tr><tr>';
+  }
+
+  html += '</tr></table>';
+  calendarDiv.innerHTML = html;
+
+  let navHtml = '';
+  if(currentMonthIndex>0) navHtml+=`<button class="monthNav" onclick="changeMonth(-1)">◀ 前の月</button>`;
+  if(currentMonthIndex<monthsKeys.length-1) navHtml+=`<button class="monthNav" onclick="changeMonth(1)">次の月 ▶</button>`;
+  monthNavDiv.innerHTML = navHtml;
+}
+
+function changeMonth(delta) {
+  currentMonthIndex += delta;
+  if(currentMonthIndex < 0) currentMonthIndex = 0;
+  if(currentMonthIndex >= monthsKeys.length) currentMonthIndex = monthsKeys.length-1;
+  displayMonth();
+}
+
+function renderAnniversaryAll(videos){
+  const today = new Date();
+  const month = today.getMonth();
+  const date = today.getDate();
+  const container = document.getElementById('anniversaryVideos');
+  const filtered = videos.filter(v=>{
+    const d = new Date(v.date);
+    return d.getMonth()===month && d.getDate()===date;
+  });
+  if(filtered.length===0){
+    container.innerHTML='<p>該当なし</p>';
+    return;
+  }
+  filtered.sort((a,b)=>new Date(b.date)-new Date(a.date));
+  container.innerHTML = filtered.map(v=>{
+    return `<div class="video" data-date="${v.date}" onclick="window.open('${v.url}','_blank')">
+      <strong>${new Date(v.date).getFullYear()}年</strong><br>
+      <img src="${v.thumbnail}" alt="${v.title}">
+      <span>${v.title}</span>
+    </div>`;
+  }).join('');
+}
+
+function highlightAnniversary(year,month,day){
+  const selectedContainer=document.getElementById('selectedVideos');
+  const filtered=videos.filter(v=>{
+    const d=new Date(v.date);
+    return (d.getMonth()+1)===month && d.getDate()===day;
+  });
+  if(filtered.length===0) selectedContainer.innerHTML='<p>動画なし</p>';
+  else{
+    filtered.sort((a,b)=>new Date(b.date)-new Date(a.date));
+    selectedContainer.innerHTML= filtered.map(v=>`<div class="video" data-date="${v.date}" onclick="window.open('${v.url}','_blank')">
+      <strong>${new Date(v.date).getFullYear()}年</strong><br>
+      <img src="${v.thumbnail}" alt="${v.title}">
+      <span>${v.title}</span>
+    </div>`).join('');
+  }
+
+  const allCells = calendarDiv.querySelectorAll('td');
+  allCells.forEach(td => td.classList.remove('highlight'));
+  allCells.forEach(td => {
+    const tdText = td.querySelector('strong')?.innerText;
+    if(tdText){
+      if(parseInt(tdText) === day) td.classList.add('highlight');
+    } else {
+      if(td.innerText == day) td.classList.add('highlight');
+    }
+  });
+}
+
+window.onload=async()=>{
+  calendarDiv.innerHTML='読み込み中...';
+  await fetchUploadsPlaylistId();
+  await fetchAllVideos();
+  setupMonths();
+  displayMonth();
+  renderAnniversaryAll(videos);
+};
+</script>
+</body>
+</html>
